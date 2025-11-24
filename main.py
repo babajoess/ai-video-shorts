@@ -6,7 +6,7 @@ import os
 
 app = FastAPI()
 
-# --- CORS AYARLARI ---
+# --- CORS AYARLARI (Wix'in bağlanması için) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,35 +26,34 @@ def read_root():
 def analyze_video(request: VideoRequest):
     print(f"İstek geldi: {request.url}")
     
-    # Varsayılan Değerler (Eğer YouTube engellerse bunlar dönecek)
+    # Varsayılan Değerler (Hata olursa dönecekler)
     video_title = "Örnek Video: Big Buck Bunny"
     thumbnail = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Big_buck_bunny_poster_big.jpg/800px-Big_buck_bunny_poster_big.jpg"
     duration = 60
     app_message = ""
     
     try:
-        # 1. YouTube'u kandırmak için özel ayarlar (Android İstemcisi Taklidi)
+        # 1. YouTube Ayarları (Çerez Destekli)
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'format': 'best',
             'nocheckcertificate': True,
-            'ignoreerrors': True, # Hata olursa patlama, devam et
-            # Bot Engelini Aşmak İçin Kritik Ayarlar:
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'web'], # Kendini Android telefon gibi tanıt
-                }
-            },
+            'ignoreerrors': True,
+            
+            # --- ÖNEMLİ: Çerez dosyasını buradan okuyor ---
+            'cookiefile': 'cookies.txt', 
+            # ----------------------------------------------
+            
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
             }
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # download=False dedik çünkü sadece başlığı çekiyoruz, videoyu indirmiyoruz
             info = ydl.extract_info(request.url, download=False)
             
-            # Eğer veri çekebildiysek değişkenleri güncelle
             if info:
                 video_title = info.get('title', video_title)
                 thumbnail = info.get('thumbnail', thumbnail)
@@ -63,11 +62,11 @@ def analyze_video(request: VideoRequest):
                 print(f"BAŞARILI: {video_title}")
             
     except Exception as e:
-        # YouTube engellerse burası çalışır
-        print(f"YOUTUBE ENGELİ: {str(e)}")
-        app_message = "YouTube Bot Koruması (Simülasyon Modu)"
+        # YouTube engellerse veya cookies.txt yoksa burası çalışır
+        print(f"HATA OLUŞTU: {str(e)}")
+        app_message = "Video Bilgisi Alınamadı (Simülasyon)"
 
-    # 2. Sonucu Wix'e gönder (Her durumda 'success' dönüyoruz ki arayüz bozulmasın)
+    # 2. Sonucu Wix'e gönder
     return {
         "status": "success",
         "message": app_message,

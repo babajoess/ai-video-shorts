@@ -35,47 +35,63 @@ def get_video_id(url):
 
 def fetch_from_invidious(video_id):
     """YouTube engellerse veriyi Invidious API'den çeker (Yedek Plan)"""
-    # Halka açık, güvenilir Invidious sunucuları
+    # GÜNCELLENMİŞ VE GENİŞLETİLMİŞ SUNUCU LİSTESİ
     instances = [
-        "https://inv.tux.pizza",
-        "https://invidious.projectsegfau.lt",
-        "https://vid.puffyan.us"
+        "https://invidious.drgns.space",       # Almanya (Genelde hızlı)
+        "https://invidious.fdn.fr",            # Fransa (Çok sağlam)
+        "https://invidious.perennialteks.com", # ABD
+        "https://yt.artemislena.eu",           # Avrupa
+        "https://invidious.protokolla.fi",     # Finlandiya
+        "https://iv.ggtyler.dev",              # ABD
+        "https://inv.tux.pizza",               # Yedek
     ]
     
+    print(f"B Planı Devrede: {len(instances)} adet sunucu denenecek...")
+
     for instance in instances:
         try:
             api_url = f"{instance}/api/v1/videos/{video_id}"
-            print(f"Yedek Sunucu Deneniyor: {instance}")
+            print(f"Deneniyor: {instance} ...")
             
-            # Python'un kendi kütüphanesiyle istek atıyoruz (Ekstra kütüphane gerekmez)
+            # Tarayıcı gibi davranarak istek at
             req = urllib.request.Request(
                 api_url, 
-                headers={'User-Agent': 'Mozilla/5.0'}
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             )
-            with urllib.request.urlopen(req, timeout=5) as response:
+            
+            # Timeout süresini 8 saniyeye çıkardık
+            with urllib.request.urlopen(req, timeout=8) as response:
                 if response.status == 200:
                     data = json.loads(response.read().decode())
-                    print("Yedek Sunucudan Veri Alındı!")
+                    print(f"BAŞARILI! Veri {instance} adresinden alındı.")
+                    
+                    # Thumbnail güvenliği (Bazen boş gelebilir)
+                    thumb_url = "https://via.placeholder.com/640x360"
+                    if data.get('videoThumbnails') and len(data['videoThumbnails']) > 0:
+                        thumb_url = data['videoThumbnails'][0].get('url', thumb_url)
+                    
                     return {
-                        'title': data.get('title'),
-                        'thumbnail': data.get('videoThumbnails', [{}])[0].get('url'),
-                        'duration': data.get('lengthSeconds')
+                        'title': data.get('title', 'Başlık Alınamadı'),
+                        'thumbnail': thumb_url,
+                        'duration': data.get('lengthSeconds', 0)
                     }
         except Exception as e:
-            print(f"Sunucu hatası ({instance}): {e}")
+            print(f"❌ {instance} başarısız: {e}")
             continue
+            
+    print("Tüm sunucular denendi ama yanıt alınamadı.")
     return None
 
 @app.get("/")
 def read_root():
-    return {"durum": "Sunucu Aktif", "motor": "Hibrit (yt-dlp + Invidious)"}
+    return {"durum": "Sunucu Aktif", "motor": "v3.0 (Genişletilmiş Liste)"}
 
 @app.post("/analyze")
 def analyze_video(request: VideoRequest):
     print(f"İstek geldi: {request.url}")
     
-    video_title = "Bilinmeyen Video"
-    thumbnail = "https://via.placeholder.com/640x360?text=Video+Bulunamadi"
+    video_title = "Video İşleniyor..."
+    thumbnail = "https://via.placeholder.com/640x360?text=Yukleniyor"
     duration = 0
     app_message = ""
     success = False
@@ -99,28 +115,25 @@ def analyze_video(request: VideoRequest):
                 app_message = f"Video Bulundu (Youtube): {video_title[:20]}..."
                 success = True
     except Exception as e:
-        print(f"yt-dlp Engellendi: {e}")
+        print(f"yt-dlp Engellendi, B Planına geçiliyor...")
 
-    # 2. YÖNTEM: Eğer yukarıdaki başarısız olursa "Arka Kapı"yı (Invidious) kullan
+    # 2. YÖNTEM: Eğer yukarıdaki başarısız olursa "Genişletilmiş B Planı"nı kullan
     if not success:
-        print("yt-dlp başarısız oldu, B Planına geçiliyor...")
         vid_id = get_video_id(request.url)
         if vid_id:
             fallback_data = fetch_from_invidious(vid_id)
             if fallback_data:
                 video_title = fallback_data['title']
-                # Thumbnail bazen göreceli link gelir, düzeltelim
-                thumb = fallback_data['thumbnail']
-                if thumb and not thumb.startswith('http'):
-                     thumbnail = f"https://inv.tux.pizza{thumb}"
-                else:
-                     thumbnail = thumb
+                thumbnail = fallback_data['thumbnail']
+                # Eğer thumbnail göreceli link ise (http ile başlamıyorsa) düzelt
+                if thumbnail and not thumbnail.startswith('http'):
+                     thumbnail = f"https://invidious.drgns.space{thumbnail}"
                 
                 duration = fallback_data['duration']
-                app_message = f"Video Bulundu (API): {video_title[:20]}..."
+                app_message = f"Video Bulundu (Vekil): {video_title[:20]}..."
                 success = True
             else:
-                app_message = "Tüm sunucular meşgul, lütfen tekrar dene."
+                app_message = "Yoğunluk var, lütfen tekrar deneyin."
         else:
              app_message = "Geçersiz YouTube Linki"
 
